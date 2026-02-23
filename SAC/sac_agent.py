@@ -13,8 +13,8 @@ import numpy as np
 import pandas as pd
 
 
-#ENV_NAME = "FetchPickAndPlace-v4"
-ENV_NAME = "FetchReach-v4"
+ENV_NAME = "FetchPickAndPlace-v4"
+#ENV_NAME = "FetchReach-v4"
 SEED = 42
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
