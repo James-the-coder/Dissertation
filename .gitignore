@@ -1,0 +1,17 @@
+# Environments
+.venv/
+__pycache__/
+
+# Folders (Better to keep these unique)
+franka_emika_panda/
+saves/
+saves_v1/
+videos/
+videos_v2/
+
+# Specific Files
+MJMODEL.TXT
+MUJOCO_LOG.TXT
+
+# File types
+*.ipynb
