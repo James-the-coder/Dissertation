@@ -4,21 +4,22 @@ from gymnasium.wrappers import RecordVideo
 import torch
 import numpy as np
 from actor_net import Actor
+import time
 
 # --- CONFIGURATION ---
-ENV_NAME = "FetchPickAndPlace-v4"
-#ENV_NAME = "FetchReach-v4"
-MODEL_PATH = "./saves v1/sac_her_fetch_final.pth" # Change to a specific checkpoint if needed
+#ENV_NAME = "FetchPickAndPlace-v4"
+ENV_NAME = "FetchReach-v4"
+MODEL_PATH = "./fetch_reach_saves/sac_her_fetch_final.pth" # Change to a specific checkpoint if needed
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def evaluate_agent():
     # 1. Setup Environment with rendering
     gym.register_envs(gymnasium_robotics)
 
-    env = gym.make(ENV_NAME, render_mode="rgb_array", max_episode_steps=50)
+    env = gym.make(ENV_NAME, render_mode="human", max_episode_steps=50) # human or rgb_array
 
     # video wrapper
-    env = RecordVideo(env, video_folder="./videos v2", name_prefix="FetchPickAndPlace_Demo", episode_trigger=lambda x: True)
+    #env = RecordVideo(env, video_folder="./videos v2", name_prefix="FetchPickAndPlace_Demo", episode_trigger=lambda x: True)
 
     # 2. Get Dimensions to initialize the Actor
     obs_sample, _ = env.reset()
@@ -50,7 +51,7 @@ def evaluate_agent():
         success = False
         
         for t in range(50):
-            #time.sleep(0.1)
+            #time.sleep(0.05)
             # Format inputs for PyTorch
             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
             goal_tensor = torch.FloatTensor(desired_goal).unsqueeze(0).to(device)

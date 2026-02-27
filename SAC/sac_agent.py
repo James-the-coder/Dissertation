@@ -62,7 +62,7 @@ class SAC_Agent():
 
         with torch.no_grad():
             # target action
-            next_mean, next_log_std, _ = self.target_actor.forward(state, goal)
+            next_mean, next_log_std, _ = self.target_actor.forward(next_state, goal)
             next_std = next_log_std.exp()
             next_dist = torch.distributions.Normal(next_mean, next_std)
             next_action_sample = next_dist.sample()
@@ -73,7 +73,7 @@ class SAC_Agent():
             log_prob = log_prob.sum(dim=1, keepdim=True)
 
             # target q value calculation
-            target_Q1, target_Q2 = self.critic.forward(state, goal, next_action)
+            target_Q1, target_Q2 = self.target_critic.forward(next_state, goal, next_action)
             target_Q = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
             target_Q = reward + (1 - done) * self.gamma * target_Q
 

@@ -8,6 +8,10 @@ saves/
 saves_v1/
 videos/
 videos_v2/
+videos v2/
+4m_timestep/
+fetch_reach_saves/
+
 
 # Specific Files
 MJMODEL.TXT
