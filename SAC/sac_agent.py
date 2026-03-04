@@ -179,7 +179,7 @@ if __name__ == "__main__":
     print(f"LOADED CONFIG:")
     print(f"ENV: {env_name}")
     print(f"Episodes: {episodes}")
-    print(f"SAC: (temp_tunable={alpha_fixed}, batch={batch_size}, buffer={buffer_size},\nk_future={k_future}, tau={sac_tau}, gamma={sac_gamma}, lr={sac_lr})")
+    print(f"SAC: (temp_fixed={alpha_fixed}, batch={batch_size}, buffer={buffer_size},\nk_future={k_future}, tau={sac_tau}, gamma={sac_gamma}, lr={sac_lr})")
     gym.register_envs(gymnasium_robotics)
     env = gym.make(env_name)
     #env = NormalizeObservation(env)
