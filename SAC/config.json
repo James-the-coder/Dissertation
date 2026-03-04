@@ -1,0 +1,18 @@
+{
+    "Training": {
+        "env": "FetchPickAndPlace-v4",
+        "episodes": 2000,
+        "SAC": {
+            "temp": "learnt",
+            "temp_val": 0.2,
+            "batch": 256,
+            "buffer": 1000000,
+            "k_future": 4,
+            "tau": 0.05,
+            "gamma": 0.98,
+            "learn_rate": 3e-4
+        },
+        "ICM": "False",
+        "RND": "False"
+    }
+}

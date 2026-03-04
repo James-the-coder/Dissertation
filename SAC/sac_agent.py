@@ -11,28 +11,40 @@ import gymnasium_robotics
 import os 
 import numpy as np
 import pandas as pd
+from parse_config import load_settings
+from pathlib import Path
 
+script_dir = Path(__file__).parent.absolute()
 
 ENV_NAME = "FetchPickAndPlace-v4"
 #ENV_NAME = "FetchReach-v4"
 SEED = 42
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class SAC_Agent():
-    def __init__(self, state_dim, goal_dim, action_dim, max_action):
+class SAC_Agent():  
+    def __init__(self, state_dim, goal_dim, action_dim, max_action, gamma=0.98, tau=0.05, alpha=0.2, alpha_fixed=True, learn_rate=3e-4):
         self.actor = Actor(state_dim, goal_dim, action_dim, max_action).to(device)
         self.critic = Critic(state_dim, goal_dim, action_dim).to(device)
 
         self.target_actor = copy.deepcopy(self.actor).to(device)
         self.target_critic = copy.deepcopy(self.critic).to(device)  
 
-        self.actor_optimiser = optim.Adam(self.actor.parameters(), lr=3e-4)
-        self.critic_optimiser = optim.Adam(self.critic.parameters(), lr=3e-4)
+        self.actor_optimiser = optim.Adam(self.actor.parameters(), lr=learn_rate)
+        self.critic_optimiser = optim.Adam(self.critic.parameters(), lr=learn_rate)
 
         self.max_action = max_action
-        self.gamma = 0.98
-        self.tau = 0.05
-        self.alpha = 0.2
+        self.gamma = gamma
+        self.tau = tau
+        
+        self.alpha_fixed = alpha_fixed
+        if not self.alpha_fixed:
+            # alpha is tunable here
+            self.target_entropy = -float(action_dim)
+            # optimise for log(alpha) better numerical stability
+            self.log_alpha = torch.tensor([np.log(alpha)], dtype=torch.float32, requires_grad=True, device=device)
+            self.alpha_optimiser = optim.Adam([self.log_alpha], lr=learn_rate)
+        else:
+            self.alpha = torch.tensor([alpha], dtype=torch.float32, device=device)
 
 
     def select_action(self, state, goal, deterministic=False):
@@ -59,7 +71,12 @@ class SAC_Agent():
 
         state, goal, action, reward, next_state, done = replay_buffer.sample(batch_size)
 
+        if self.alpha_fixed:
+            alpha_val = self.alpha
 
+        else:
+            alpha_val = self.log_alpha.exp().detach()
+        
         with torch.no_grad():
             # target action
             next_mean, next_log_std, _ = self.target_actor.forward(next_state, goal)
@@ -74,7 +91,7 @@ class SAC_Agent():
 
             # target q value calculation
             target_Q1, target_Q2 = self.target_critic.forward(next_state, goal, next_action)
-            target_Q = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
+            target_Q = torch.min(target_Q1, target_Q2) - alpha_val * log_prob
             target_Q = reward + (1 - done) * self.gamma * target_Q
 
         # critic update
@@ -99,12 +116,20 @@ class SAC_Agent():
         Q1, Q2 = self.critic(state, goal, new_action)
         Q = torch.min(Q1, Q2)
 
-        actor_loss = (self.alpha * log_prob - Q).mean()
+        actor_loss = (alpha_val * log_prob - Q).mean()
 
         self.actor_optimiser.zero_grad()
         actor_loss.backward()
         self.actor_optimiser.step()
 
+        if not self.alpha_fixed:
+            # calculate alpha loss
+            alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
+            self.alpha_optimiser.zero_grad()
+            alpha_loss.backward()
+            self.alpha_optimiser.step()
+
+            alpha_loss_value = alpha_loss.item()
 
         # target network polyak averaging
         for param, target_param in zip(self.critic.parameters(), self.target_critic.parameters()):
@@ -113,15 +138,20 @@ class SAC_Agent():
         for param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
-        return actor_loss.item(), critic_loss.item()
+        return actor_loss.item(), critic_loss.item(), alpha_val.item(), alpha_loss_value, 
 
     def save_checkpoint(self, filename):
-        torch.save({
+        checkpoint = {
             'actor_state_dict': self.actor.state_dict(),
             'critic_state_dict': self.critic.state_dict(),
             'actor_optimizer_state_dict': self.actor_optimiser.state_dict(),
             'critic_optimizer_state_dict': self.critic_optimiser.state_dict(),
-        }, filename)
+        }
+        if not self.alpha_fixed:
+            checkpoint['log_alpha'] = self.log_alpha
+            checkpoint['alpha_optimizer_state_dict'] = self.alpha_optimiser.state_dict()
+            
+        torch.save(checkpoint, filename)
 
 
     
@@ -131,14 +161,27 @@ class SAC_Agent():
         self.critic.load_state_dict(checkpoint['critic_state_dict'])
         self.actor_optimiser.load_state_dict(checkpoint['actor_optimizer_state_dict'])
         self.critic_optimiser.load_state_dict(checkpoint['critic_optimizer_state_dict'])
+
+        if not self.alpha_fixed and 'log_alpha' in checkpoint:
+            self.log_alpha.data = checkpoint['log_alpha'].data
+            self.alpha_optimiser.load_state_dict(checkpoint['alpha_optimizer_state_dict'])
         # Also sync target networks
         self.target_actor = copy.deepcopy(self.actor)
         self.target_critic = copy.deepcopy(self.critic)
 
 # --- 5. MAIN TRAINING LOOP ---
 if __name__ == "__main__":
+    config_settings = load_settings(f"{script_dir}/config.json")
+    env_name, episodes, sac_settings = config_settings
+
+    alpha_fixed, temp_val, batch_size, buffer_size, k_future, sac_tau, sac_gamma, sac_lr = sac_settings
+
+    print(f"LOADED CONFIG:")
+    print(f"ENV: {env_name}")
+    print(f"Episodes: {episodes}")
+    print(f"SAC: (temp_tunable={alpha_fixed}, batch={batch_size}, buffer={buffer_size},\nk_future={k_future}, tau={sac_tau}, gamma={sac_gamma}, lr={sac_lr})")
     gym.register_envs(gymnasium_robotics)
-    env = gym.make(ENV_NAME)
+    env = gym.make(env_name)
     #env = NormalizeObservation(env)
 
     # Create directories for saving
@@ -152,11 +195,12 @@ if __name__ == "__main__":
     action_dim = env.action_space.shape[0]
     max_action = float(env.action_space.high[0])
 
-    agent = SAC_Agent(state_dim, goal_dim, action_dim, max_action)
-    replay_buffer = HERBuffer(buffer_size=1_000_000, k_future=4)
+    agent = SAC_Agent(state_dim, goal_dim, action_dim, max_action, gamma=sac_gamma, 
+                      tau=sac_tau, alpha=temp_val, alpha_fixed=alpha_fixed, learn_rate=sac_lr)
+    replay_buffer = HERBuffer(buffer_size=buffer_size, k_future=k_future)
 
-    episodes = 2000
-    batch_size = 256
+    # episodes = 2000
+    # batch_size = 256
 
     # --- Logging Setup ---
     training_logs = {
@@ -164,7 +208,9 @@ if __name__ == "__main__":
         "reward": [],
         "success_rate": [],
         "actor_loss": [],
-        "critic_loss": []
+        "critic_loss": [],
+        "alpha": [],
+        "alpha_loss": []
     }
     
     print(f"Starting training on {device}...")
@@ -219,17 +265,29 @@ if __name__ == "__main__":
         # Train and collect losses
         actor_losses = []
         critic_losses = []
+        alpha_losses = []
+        alpha_vals = []
         
         if len(replay_buffer.buffer) > batch_size:
             for _ in range(50):
                 # Capture losses returned by agent.train()
-                a_loss, c_loss = agent.train(replay_buffer, batch_size)
+                a_loss, c_loss, alpha_v, alpha_loss = agent.train(replay_buffer, batch_size)
                 actor_losses.append(a_loss)
                 critic_losses.append(c_loss)
+                alpha_losses.append(alpha_loss)
+                alpha_vals.append(alpha_v)
+
         
         # Calculate averages for this episode
         avg_actor_loss = np.mean(actor_losses) if actor_losses else 0
         avg_critic_loss = np.mean(critic_losses) if critic_losses else 0
+
+        if alpha_vals:
+            avg_alpha = np.mean(alpha_vals)
+            avg_alpha_loss = np.mean(alpha_losses)
+        else:
+            avg_alpha = agent.alpha.item() if agent.alpha_fixed else agent.log_alpha.exp().item()
+            avg_alpha_loss = 0.0
 
         # --- LOGGING DATA ---
         training_logs["episode"].append(ep + 1)
@@ -237,6 +295,8 @@ if __name__ == "__main__":
         training_logs["success_rate"].append(success)
         training_logs["actor_loss"].append(avg_actor_loss)
         training_logs["critic_loss"].append(avg_critic_loss)
+        training_logs["alpha"].append(avg_alpha)
+        training_logs["alpha_loss"].append(avg_alpha_loss)
 
 
         if (ep + 1) % 100 == 0:
