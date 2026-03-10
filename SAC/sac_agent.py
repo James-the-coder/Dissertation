@@ -56,7 +56,7 @@ class SAC_Agent():
         # intrinsic motivation algorithm setup
         self.useRND = useRND
         if self.useRND:
-            self.rnd_model = RNDModel(self, state_dim).to(device)
+            self.rnd_model = RNDModel(state_dim).to(device)
             self.rnd_optimiser = optim.Adam(self.rnd_model.predictor_net.parameters(), lr=learn_rate)
 
 
