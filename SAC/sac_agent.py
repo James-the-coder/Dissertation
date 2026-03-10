@@ -160,6 +160,8 @@ class SAC_Agent():
             self.alpha_optimiser.step()
 
             alpha_loss_value = alpha_loss.item()
+        else:
+            alpha_loss_value = 0.0
 
         # target network polyak averaging
         for param, target_param in zip(self.critic.parameters(), self.target_critic.parameters()):
