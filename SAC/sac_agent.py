@@ -259,7 +259,8 @@ if __name__ == "__main__":
         "actor_loss": [],
         "critic_loss": [],
         "alpha": [],
-        "alpha_loss": []
+        "alpha_loss": [],
+        "intrinsic_reward": []
     }
     
     print(f"Starting training on {device}...")
