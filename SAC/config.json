@@ -13,6 +13,7 @@
             "learn_rate": 3e-4
         },
         "ICM": "False",
-        "RND": "False"
+        "RND": "True",
+        "im_scale": 0.2
     }
 }

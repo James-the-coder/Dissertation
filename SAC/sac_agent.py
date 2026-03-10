@@ -13,8 +13,14 @@ import numpy as np
 import pandas as pd
 from parse_config import load_settings
 from pathlib import Path
+import sys
 
 script_dir = Path(__file__).parent.absolute()
+
+rnd_folder = os.path.join(script_dir, 'RND')
+sys.path.append(rnd_folder)
+
+from rnd import RNDModel
 
 ENV_NAME = "FetchPickAndPlace-v4"
 #ENV_NAME = "FetchReach-v4"
@@ -22,7 +28,7 @@ SEED = 42
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class SAC_Agent():  
-    def __init__(self, state_dim, goal_dim, action_dim, max_action, gamma=0.98, tau=0.05, alpha=0.2, alpha_fixed=True, learn_rate=3e-4):
+    def __init__(self, state_dim, goal_dim, action_dim, max_action, gamma=0.98, tau=0.05, alpha=0.2, alpha_fixed=True, learn_rate=3e-4, useRND=False, useICM=False, im_reward_scale=0.1):
         self.actor = Actor(state_dim, goal_dim, action_dim, max_action).to(device)
         self.critic = Critic(state_dim, goal_dim, action_dim).to(device)
 
@@ -35,6 +41,7 @@ class SAC_Agent():
         self.max_action = max_action
         self.gamma = gamma
         self.tau = tau
+        self.intrinsic_scale = im_reward_scale
         
         self.alpha_fixed = alpha_fixed
         if not self.alpha_fixed:
@@ -45,6 +52,12 @@ class SAC_Agent():
             self.alpha_optimiser = optim.Adam([self.log_alpha], lr=learn_rate)
         else:
             self.alpha = torch.tensor([alpha], dtype=torch.float32, device=device)
+
+        # intrinsic motivation algorithm setup
+        self.useRND = useRND
+        if self.useRND:
+            self.rnd_model = RNDModel(self, state_dim).to(device)
+            self.rnd_optimiser = optim.Adam(self.rnd_model.predictor_net.parameters(), lr=learn_rate)
 
 
     def select_action(self, state, goal, deterministic=False):
@@ -76,6 +89,16 @@ class SAC_Agent():
 
         else:
             alpha_val = self.log_alpha.exp().detach()
+
+        if self.useRND:
+            predictor_feature, target_feature = self.rnd_model.forward(next_state)
+            intrinsic_reward = F.mse_loss(predictor_feature, target_feature, reduction='none').mean(dim=-1, keepdim=True)
+            reward = reward + (self.intrinsic_scale * intrinsic_reward.detach())
+            rnd_loss = intrinsic_reward.mean()
+
+            self.rnd_optimiser.zero_grad()
+            rnd_loss.backward()
+            self.rnd_optimiser.step()
         
         with torch.no_grad():
             # target action
@@ -93,6 +116,8 @@ class SAC_Agent():
             target_Q1, target_Q2 = self.target_critic.forward(next_state, goal, next_action)
             target_Q = torch.min(target_Q1, target_Q2) - alpha_val * log_prob
             target_Q = reward + (1 - done) * self.gamma * target_Q
+
+        
 
         # critic update
         current_Q1, current_Q2 = self.critic.forward(state, goal, action)
@@ -138,7 +163,9 @@ class SAC_Agent():
         for param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
+
         return actor_loss.item(), critic_loss.item(), alpha_val.item(), alpha_loss_value, 
+
 
     def save_checkpoint(self, filename):
         checkpoint = {
@@ -150,6 +177,12 @@ class SAC_Agent():
         if not self.alpha_fixed:
             checkpoint['log_alpha'] = self.log_alpha
             checkpoint['alpha_optimizer_state_dict'] = self.alpha_optimiser.state_dict()
+
+        if self.useRND:
+            checkpoint['rnd_predictor_state_dict'] = self.rnd_model.predictor_net.state_dict(),
+            checkpoint['rnd_target_state_dict'] = self.rnd_model.target_net.state_dict(),
+            checkpoint['rnd_optimiser_state_dict'] = self.rnd_optimiser.state_dict()
+
             
         torch.save(checkpoint, filename)
 
@@ -165,6 +198,12 @@ class SAC_Agent():
         if not self.alpha_fixed and 'log_alpha' in checkpoint:
             self.log_alpha.data = checkpoint['log_alpha'].data
             self.alpha_optimiser.load_state_dict(checkpoint['alpha_optimizer_state_dict'])
+
+        if self.useRND:
+            self.rnd_model.predictor_net.load_state_dict(checkpoint['rnd_predictor_state_dict'])
+            self.rnd_model.target_net.load_state_dict(checkpoint['rnd_target_state_dict'])
+            self.rnd_optimiser.load_state_dict(checkpoint['rnd_optimiser_state_dict'])
+
         # Also sync target networks
         self.target_actor = copy.deepcopy(self.actor)
         self.target_critic = copy.deepcopy(self.critic)
@@ -172,7 +211,7 @@ class SAC_Agent():
 # --- 5. MAIN TRAINING LOOP ---
 if __name__ == "__main__":
     config_settings = load_settings(f"{script_dir}/config.json")
-    env_name, episodes, sac_settings = config_settings
+    env_name, episodes, sac_settings, useICM, useRND, im_reward_scale = config_settings
 
     alpha_fixed, temp_val, batch_size, buffer_size, k_future, sac_tau, sac_gamma, sac_lr = sac_settings
 
@@ -180,6 +219,10 @@ if __name__ == "__main__":
     print(f"ENV: {env_name}")
     print(f"Episodes: {episodes}")
     print(f"SAC: (temp_fixed={alpha_fixed}, batch={batch_size}, buffer={buffer_size},\nk_future={k_future}, tau={sac_tau}, gamma={sac_gamma}, lr={sac_lr})")
+    if useRND:
+        print(f"RND: reward_scale={im_reward_scale}")
+    elif useICM:
+        print(f"ICM: reward_scale={im_reward_scale}")
     gym.register_envs(gymnasium_robotics)
     env = gym.make(env_name)
     #env = NormalizeObservation(env)
@@ -196,7 +239,8 @@ if __name__ == "__main__":
     max_action = float(env.action_space.high[0])
 
     agent = SAC_Agent(state_dim, goal_dim, action_dim, max_action, gamma=sac_gamma, 
-                      tau=sac_tau, alpha=temp_val, alpha_fixed=alpha_fixed, learn_rate=sac_lr)
+                      tau=sac_tau, alpha=temp_val, alpha_fixed=alpha_fixed, learn_rate=sac_lr, 
+                      useRND=useRND, useICM=useICM, im_reward_scale=im_reward_scale)
     replay_buffer = HERBuffer(buffer_size=buffer_size, k_future=k_future)
 
     # episodes = 2000

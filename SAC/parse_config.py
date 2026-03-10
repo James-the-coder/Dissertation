@@ -27,6 +27,14 @@ def load_settings(config_path):
     sac_lr = SAC_settings['learn_rate']
 
     # Intrinsic Motivation settings
-    # TBC
+    RND = training_data['RND']
+    ICM = training_data['ICM']
+    im_reward_scale = training_data['im_scale']
 
-    return env, episodes, (fixed, temp_val, batch_size, buffer_size ,k_future, sac_tau, sac_gamma, sac_lr)
+    useRND = True if RND == "True" else False
+    useICM = True if ICM == "True" else False
+
+    if useICM and useRND:
+        raise Exception("Cannot use both ICM and RND")
+
+    return env, episodes, (fixed, temp_val, batch_size, buffer_size ,k_future, sac_tau, sac_gamma, sac_lr), useRND, useICM, im_reward_scale
