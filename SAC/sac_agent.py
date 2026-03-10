@@ -216,7 +216,7 @@ class SAC_Agent():
 # --- 5. MAIN TRAINING LOOP ---
 if __name__ == "__main__":
     config_settings = load_settings(f"{script_dir}/config.json")
-    env_name, episodes, sac_settings, useICM, useRND, im_reward_scale = config_settings
+    env_name, episodes, sac_settings, useRND, useICM, im_reward_scale = config_settings
 
     alpha_fixed, temp_val, batch_size, buffer_size, k_future, sac_tau, sac_gamma, sac_lr = sac_settings
 
