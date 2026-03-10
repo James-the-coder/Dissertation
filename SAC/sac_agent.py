@@ -99,6 +99,11 @@ class SAC_Agent():
             self.rnd_optimiser.zero_grad()
             rnd_loss.backward()
             self.rnd_optimiser.step()
+
+            mean_intrinsic_reward = rnd_loss.item()
+
+        else:
+            mean_intrinsic_reward = 0.0
         
         with torch.no_grad():
             # target action
@@ -164,7 +169,7 @@ class SAC_Agent():
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 
-        return actor_loss.item(), critic_loss.item(), alpha_val.item(), alpha_loss_value, 
+        return actor_loss.item(), critic_loss.item(), alpha_val.item(), alpha_loss_value, mean_intrinsic_reward
 
 
     def save_checkpoint(self, filename):
@@ -311,20 +316,23 @@ if __name__ == "__main__":
         critic_losses = []
         alpha_losses = []
         alpha_vals = []
+        intrinsic_rewards = []
         
         if len(replay_buffer.buffer) > batch_size:
             for _ in range(50):
                 # Capture losses returned by agent.train()
-                a_loss, c_loss, alpha_v, alpha_loss = agent.train(replay_buffer, batch_size)
+                a_loss, c_loss, alpha_v, alpha_loss, mean_intrinsic_reward = agent.train(replay_buffer, batch_size)
                 actor_losses.append(a_loss)
                 critic_losses.append(c_loss)
                 alpha_losses.append(alpha_loss)
                 alpha_vals.append(alpha_v)
+                intrinsic_rewards.append(mean_intrinsic_reward)
 
         
         # Calculate averages for this episode
         avg_actor_loss = np.mean(actor_losses) if actor_losses else 0
         avg_critic_loss = np.mean(critic_losses) if critic_losses else 0
+        avg_intrinsic_reward = np.mean(intrinsic_rewards) if intrinsic_rewards else 0
 
         if alpha_vals:
             avg_alpha = np.mean(alpha_vals)
@@ -341,6 +349,7 @@ if __name__ == "__main__":
         training_logs["critic_loss"].append(avg_critic_loss)
         training_logs["alpha"].append(avg_alpha)
         training_logs["alpha_loss"].append(avg_alpha_loss)
+        training_logs["intrinsic_reward"].append(avg_intrinsic_reward)
 
 
         if (ep + 1) % 100 == 0:
