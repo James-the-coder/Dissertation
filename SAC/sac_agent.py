@@ -257,6 +257,7 @@ if __name__ == "__main__":
     replay_buffer = HERBuffer(buffer_size=buffer_size, k_future=k_future)
 
     obs_normaliser = RunningMeanStd(state_dim)
+    obs_normaliser.to(device)
 
     # normalisation warmup
     warmup_steps = 50
