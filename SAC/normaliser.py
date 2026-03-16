@@ -13,7 +13,7 @@ class RunningMeanStd(nn.Module):
 
     def update(self, x):
         """Updates the running statistics given a batch of observations."""
-        x = x.to(torch.float32, device=self.mean.device)
+        x = x.to(dtype=torch.float32, device=self.mean.device)
         
         if x.dim() == 1:
             x = x.unsqueeze(0)
