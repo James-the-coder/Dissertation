@@ -97,8 +97,10 @@ class SAC_Agent():
 
         if self.useRND:
             predictor_feature, target_feature = self.rnd_model.forward(norm_next_state)
-            intrinsic_reward = F.mse_loss(predictor_feature, target_feature, reduction='none').mean(dim=-1, keepdim=True)
-            reward = reward + (self.intrinsic_scale * intrinsic_reward.detach())
+            intrinsic_reward = F.mse_loss(predictor_feature, target_feature.detach(), reduction='none').mean(dim=-1, keepdim=True)
+            reward_normaliser.update(intrinsic_reward.detach())
+            normalised_intrinsic_reward = intrinsic_reward / torch.sqrt(reward_normaliser.var + reward_normaliser.epsilon)
+            reward = reward + (self.intrinsic_scale * normalised_intrinsic_reward.detach())
             rnd_loss = intrinsic_reward.mean()
 
             self.rnd_optimiser.zero_grad()
@@ -106,9 +108,11 @@ class SAC_Agent():
             self.rnd_optimiser.step()
 
             mean_intrinsic_reward = rnd_loss.item()
+            mean_norm_intrinsic_reward = normalised_intrinsic_reward.mean().item()
 
         else:
             mean_intrinsic_reward = 0.0
+            mean_norm_intrinsic_reward = 0.0
         
         with torch.no_grad():
             # target action
@@ -176,7 +180,7 @@ class SAC_Agent():
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 
-        return actor_loss.item(), critic_loss.item(), alpha_val.item(), alpha_loss_value, mean_intrinsic_reward
+        return actor_loss.item(), critic_loss.item(), alpha_val.item(), alpha_loss_value, mean_intrinsic_reward, mean_norm_intrinsic_reward
 
 
     def save_checkpoint(self, filename):
@@ -259,6 +263,9 @@ if __name__ == "__main__":
     obs_normaliser = RunningMeanStd(state_dim)
     obs_normaliser.to(device)
 
+    reward_normaliser = RunningMeanStd(1)
+    reward_normaliser.to(device)
+
     # normalisation warmup
     warmup_steps = 50
     total_warmup_steps = warmup_steps * 50
@@ -281,7 +288,6 @@ if __name__ == "__main__":
             obs, info = env.reset()
         else:
             obs = next_obs
-
 
     # --- Logging Setup ---
     training_logs = {
@@ -352,23 +358,27 @@ if __name__ == "__main__":
         alpha_losses = []
         alpha_vals = []
         intrinsic_rewards = []
+        norm_intrinsic_rewards = []
+        
         
         if len(replay_buffer.buffer) > batch_size:
             for _ in range(50):
                 # Capture losses returned by agent.train()
-                a_loss, c_loss, alpha_v, alpha_loss, mean_intrinsic_reward = agent.train(replay_buffer, batch_size)
+                a_loss, c_loss, alpha_v, alpha_loss, mean_intrinsic_reward, norm_intrinsic_reward = agent.train(replay_buffer, batch_size)
                 actor_losses.append(a_loss)
                 critic_losses.append(c_loss)
                 alpha_losses.append(alpha_loss)
                 alpha_vals.append(alpha_v)
                 intrinsic_rewards.append(mean_intrinsic_reward)
+                norm_intrinsic_rewards.append(norm_intrinsic_reward)
 
         
         # Calculate averages for this episode
         avg_actor_loss = np.mean(actor_losses) if actor_losses else 0
         avg_critic_loss = np.mean(critic_losses) if critic_losses else 0
         avg_intrinsic_reward = np.mean(intrinsic_rewards) if intrinsic_rewards else 0
-
+        avg_norm_intrinsic_reward = np.mean(norm_intrinsic_rewards) if norm_intrinsic_rewards else 0
+        print(avg_norm_intrinsic_reward)
         if alpha_vals:
             avg_alpha = np.mean(alpha_vals)
             avg_alpha_loss = np.mean(alpha_losses)
