@@ -298,7 +298,8 @@ if __name__ == "__main__":
         "critic_loss": [],
         "alpha": [],
         "alpha_loss": [],
-        "intrinsic_reward": []
+        "raw_intrinsic_reward": [],
+        "normalised_intrinsic_reward": []
     }
     
     print(f"Starting training on {device}...")
@@ -378,7 +379,7 @@ if __name__ == "__main__":
         avg_critic_loss = np.mean(critic_losses) if critic_losses else 0
         avg_intrinsic_reward = np.mean(intrinsic_rewards) if intrinsic_rewards else 0
         avg_norm_intrinsic_reward = np.mean(norm_intrinsic_rewards) if norm_intrinsic_rewards else 0
-        print(avg_norm_intrinsic_reward)
+
         if alpha_vals:
             avg_alpha = np.mean(alpha_vals)
             avg_alpha_loss = np.mean(alpha_losses)
@@ -395,6 +396,7 @@ if __name__ == "__main__":
         training_logs["alpha"].append(avg_alpha)
         training_logs["alpha_loss"].append(avg_alpha_loss)
         training_logs["intrinsic_reward"].append(avg_intrinsic_reward)
+        training_logs["normalised_intrinsic_reward"].append(avg_norm_intrinsic_reward)
 
 
         if (ep + 1) % 100 == 0:
@@ -407,7 +409,7 @@ if __name__ == "__main__":
             df.to_csv("./saves/training_log.csv", index=False)
         
         # Save Model Checkpoint every 500 episodes
-        if (ep + 1) % 500 == 0:
+        if (ep + 1) % 5000 == 0:
             agent.save_checkpoint(f"./saves/sac_her_fetch_{ep+1}.pth")
             print(f"Model Saved: sac_her_fetch_{ep+1}.pth")
 
