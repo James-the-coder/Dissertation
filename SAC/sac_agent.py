@@ -395,7 +395,7 @@ if __name__ == "__main__":
         training_logs["critic_loss"].append(avg_critic_loss)
         training_logs["alpha"].append(avg_alpha)
         training_logs["alpha_loss"].append(avg_alpha_loss)
-        training_logs["intrinsic_reward"].append(avg_intrinsic_reward)
+        training_logs["raw_intrinsic_reward"].append(avg_intrinsic_reward)
         training_logs["normalised_intrinsic_reward"].append(avg_norm_intrinsic_reward)
 
 
