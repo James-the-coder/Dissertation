@@ -10,6 +10,16 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
 
+# New Xavier Initialization
+def layer_init_xavier(layer, bias_const=0.0):
+    # Calculate gain for LeakyReLU to prevent vanishing gradients
+    gain = torch.nn.init.calculate_gain('leaky_relu') 
+    
+    # Apply Xavier Uniform initialization
+    torch.nn.init.xavier_uniform_(layer.weight, gain=gain)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
 class RNDModel(nn.Module):
     def __init__(self, input_size):
         super(RNDModel, self).__init__()
@@ -29,13 +39,13 @@ class RNDModel(nn.Module):
 
         # target network
         self.target_net = nn.Sequential(
-            layer_init(nn.Linear(self.input_size, 512)),
+            layer_init_xavier(nn.Linear(self.input_size, 512)),
             nn.LeakyReLU(),
-            layer_init(nn.Linear(512, 512)),
+            layer_init_xavier(nn.Linear(512, 512)),
             nn.LeakyReLU(),
-            layer_init(nn.Linear(512, 512)),
+            layer_init_xavier(nn.Linear(512, 512)),
             nn.LeakyReLU(),
-            layer_init(nn.Linear(512, 512))
+            layer_init_xavier(nn.Linear(512, 512))
         )
 
         # freeze target network params
