@@ -21,10 +21,15 @@ def layer_init_xavier(layer, bias_const=0.0):
     return layer
 
 class RNDModel(nn.Module):
-    def __init__(self, input_size):
+    def __init__(self, input_size, masked=True):
         super(RNDModel, self).__init__()
 
-        self.input_size = input_size
+        self.masked = masked
+
+        if self.masked:
+            self.input_size = 15
+        else:
+            self.input_size = input_size
 
         # predictor network
         self.predictor_net = nn.Sequential(
@@ -54,6 +59,11 @@ class RNDModel(nn.Module):
 
 
     def forward(self, state):
+        if self.masked:
+            # use only block data + relative arm and block data
+            feature_idxs = [3,4,5,6,7,8,11,12,13,14,15,16,17,18,19]
+            state = state[..., feature_idxs]
+
         target_feature = self.target_net(state)
         predict_feature = self.predictor_net(state)
 
