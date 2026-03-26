@@ -85,9 +85,9 @@ class SAC_Agent():
 
         state, goal, action, reward, next_state, done = replay_buffer.sample(batch_size)
 
-        with torch.no_grad():
-            norm_state = obs_normaliser.normalise(state)
-            norm_next_state = obs_normaliser.normalise(next_state)
+        # with torch.no_grad():
+        #     norm_state = obs_normaliser.normalise(state)
+        #     norm_next_state = obs_normaliser.normalise(next_state)
             
         if self.alpha_fixed:
             alpha_val = self.alpha
@@ -96,7 +96,7 @@ class SAC_Agent():
             alpha_val = self.log_alpha.exp().detach()
 
         if self.useRND:
-            predictor_feature, target_feature = self.rnd_model.forward(norm_next_state)
+            predictor_feature, target_feature = self.rnd_model.forward(next_state)
             intrinsic_reward = F.mse_loss(predictor_feature, target_feature.detach(), reduction='none').mean(dim=-1, keepdim=True)
             reward_normaliser.update(intrinsic_reward.detach())
             normalised_intrinsic_reward = intrinsic_reward / torch.sqrt(reward_normaliser.var + reward_normaliser.epsilon)
@@ -116,7 +116,7 @@ class SAC_Agent():
         
         with torch.no_grad():
             # target action
-            next_mean, next_log_std, _ = self.target_actor.forward(norm_next_state, goal)
+            next_mean, next_log_std, _ = self.target_actor.forward(next_state, goal)
             next_std = next_log_std.exp()
             next_dist = torch.distributions.Normal(next_mean, next_std)
             next_action_sample = next_dist.sample()
@@ -127,14 +127,14 @@ class SAC_Agent():
             log_prob = log_prob.sum(dim=1, keepdim=True)
 
             # target q value calculation
-            target_Q1, target_Q2 = self.target_critic.forward(norm_next_state, goal, next_action)
+            target_Q1, target_Q2 = self.target_critic.forward(next_state, goal, next_action)
             target_Q = torch.min(target_Q1, target_Q2) - alpha_val * log_prob
             target_Q = reward + (1 - done) * self.gamma * target_Q
 
         
 
         # critic update
-        current_Q1, current_Q2 = self.critic.forward(norm_state, goal, action)
+        current_Q1, current_Q2 = self.critic.forward(state, goal, action)
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
 
         self.critic_optimiser.zero_grad()
@@ -143,7 +143,7 @@ class SAC_Agent():
 
         # actor update
         # re-evaluate current state
-        mean, log_std, _ = self.actor.forward(norm_state, goal)
+        mean, log_std, _ = self.actor.forward(state, goal)
         std = log_std.exp()
         dist = torch.distributions.Normal(mean, std)
         z = dist.rsample()
@@ -152,7 +152,7 @@ class SAC_Agent():
         log_prob = dist.log_prob(z) - torch.log(1 - torch.tanh(z).pow(2) + 1e-6)
         log_prob = log_prob.sum(dim=1, keepdim=True)
 
-        Q1, Q2 = self.critic(norm_state, goal, new_action)
+        Q1, Q2 = self.critic(state, goal, new_action)
         Q = torch.min(Q1, Q2)
 
         actor_loss = (alpha_val * log_prob - Q).mean()
@@ -189,7 +189,7 @@ class SAC_Agent():
             'critic_state_dict': self.critic.state_dict(),
             'actor_optimizer_state_dict': self.actor_optimiser.state_dict(),
             'critic_optimizer_state_dict': self.critic_optimiser.state_dict(),
-            'normaliser_state_dict': obs_normaliser.state_dict()
+            #'normaliser_state_dict': obs_normaliser.state_dict()
         }
         if not self.alpha_fixed:
             checkpoint['log_alpha'] = self.log_alpha
@@ -260,34 +260,34 @@ if __name__ == "__main__":
                       useRND=useRND, useICM=useICM, im_reward_scale=im_reward_scale)
     replay_buffer = HERBuffer(buffer_size=buffer_size, k_future=k_future)
 
-    obs_normaliser = RunningMeanStd(state_dim)
-    obs_normaliser.to(device)
+    # obs_normaliser = RunningMeanStd(state_dim)
+    # obs_normaliser.to(device)
 
     reward_normaliser = RunningMeanStd(1)
     reward_normaliser.to(device)
 
     # normalisation warmup
-    warmup_steps = 50
-    total_warmup_steps = warmup_steps * 50
-    obs, _ = env.reset()
-    print(f"Warming Up Normaliser: {warmup_steps} episodes")
-    for i in range(total_warmup_steps):
-        # 1. Take a completely random action
-        action = env.action_space.sample()
+    # warmup_steps = 50
+    # total_warmup_steps = warmup_steps * 50
+    # obs, _ = env.reset()
+    # print(f"Warming Up Normaliser: {warmup_steps} episodes")
+    # for i in range(total_warmup_steps):
+    #     # 1. Take a completely random action
+    #     action = env.action_space.sample()
         
-        # 2. Step the environment
-        next_obs, reward, terminated, truncated, info = env.step(action)
+    #     # 2. Step the environment
+    #     next_obs, reward, terminated, truncated, info = env.step(action)
         
-        # 3. Extract the actual observation array (Fetch envs return dictionaries)
-        # We only want the 'observation' key, not 'achieved_goal' or 'desired_goal'
-        state_array = obs['observation']
+    #     # 3. Extract the actual observation array (Fetch envs return dictionaries)
+    #     # We only want the 'observation' key, not 'achieved_goal' or 'desired_goal'
+    #     state_array = next_obs['observation']
 
-        obs_normaliser.update(torch.tensor(state_array))
+    #     obs_normaliser.update(torch.tensor(state_array))
 
-        if terminated or truncated:
-            obs, info = env.reset()
-        else:
-            obs = next_obs
+    #     if terminated or truncated:
+    #         obs, info = env.reset()
+    #     else:
+    #         obs = next_obs
 
     # --- Logging Setup ---
     training_logs = {
@@ -328,7 +328,7 @@ if __name__ == "__main__":
             if info.get('is_success', 0.0) > 0:
                 success = 1
 
-            obs_normaliser.update(torch.tensor(next_state))
+            #obs_normaliser.update(torch.tensor(next_state))
             
             done = terminated or truncated
             episode_reward += reward
