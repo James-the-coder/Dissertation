@@ -21,7 +21,7 @@ def layer_init_xavier(layer, bias_const=0.0):
     return layer
 
 class RNDModel(nn.Module):
-    def __init__(self, input_size, masked=True):
+    def __init__(self, input_size, masked=False):
         super(RNDModel, self).__init__()
 
         self.masked = masked
