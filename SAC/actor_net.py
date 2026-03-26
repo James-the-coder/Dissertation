@@ -3,9 +3,14 @@ import torch.nn as nn
 
 
 class Actor(nn.Module):
-    def __init__(self, state_dim, goal_dim, action_dim, max_action):
+    def __init__(self, state_dim, goal_dim, action_dim, max_action, half_cheetah=False):
         super(Actor, self).__init__()
+        self.half_cheetah = half_cheetah
+
         input_dim = state_dim + goal_dim
+
+        if self.half_cheetah:
+            input_dim = state_dim
 
         self.l1 = nn.Linear(input_dim, 256)
         self.l2 = nn.Linear(256, 256)
@@ -17,6 +22,8 @@ class Actor(nn.Module):
 
     def forward(self, state, goal):
         x = torch.cat([state, goal], 1)
+        if self.half_cheetah:
+            x = state
         x = torch.relu(self.l1(x))
         x = torch.relu(self.l2(x))
         x = torch.relu(self.l3(x))
