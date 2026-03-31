@@ -84,8 +84,6 @@ class SAC_Agent():
     def train(self, replay_buffer, batch_size=256):
 
         state, goal, action, reward, next_state, done = replay_buffer.sample(batch_size)
-        print("before")
-        print(reward.shape)
 
         # with torch.no_grad():
         #     norm_state = obs_normaliser.normalise(state)
@@ -120,7 +118,7 @@ class SAC_Agent():
         
         with torch.no_grad():
             # target action
-            next_mean, next_log_std, _ = self.target_actor.forward(next_state, goal)
+            next_mean, next_log_std, _ = self.actor.forward(next_state, goal)
             next_std = next_log_std.exp()
             next_dist = torch.distributions.Normal(next_mean, next_std)
             next_action_sample = next_dist.sample()
@@ -143,6 +141,7 @@ class SAC_Agent():
 
         self.critic_optimiser.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1.0)
         self.critic_optimiser.step()
 
         # actor update
@@ -180,8 +179,8 @@ class SAC_Agent():
         for param, target_param in zip(self.critic.parameters(), self.target_critic.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
-        for param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+        # for param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
+        #     target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 
         return actor_loss.item(), critic_loss.item(), alpha_val.item(), alpha_loss_value, mean_intrinsic_reward, mean_norm_intrinsic_reward
