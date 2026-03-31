@@ -98,7 +98,6 @@ class SAC_Agent():
         if self.useRND:
             predictor_feature, target_feature = self.rnd_model.forward(next_state)
             intrinsic_reward = F.mse_loss(predictor_feature, target_feature.detach(), reduction='none').mean(dim=-1, keepdim=True)
-            print(f"intrinsic reward shape: {intrinsic_reward.shape}")
             reward_normaliser.update(intrinsic_reward.detach())
             normalised_intrinsic_reward = intrinsic_reward / torch.sqrt(reward_normaliser.var + reward_normaliser.epsilon)
             if self.intrinsic_scale > 0:
