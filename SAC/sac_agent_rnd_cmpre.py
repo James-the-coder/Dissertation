@@ -117,7 +117,7 @@ class SAC_Agent():
         
         with torch.no_grad():
             # target action
-            next_mean, next_log_std, _ = self.actor.forward(norm_next_state, goal)
+            next_mean, next_log_std, _ = self.actor.forward(next_state, goal)
             next_std = next_log_std.exp()
             next_dist = torch.distributions.Normal(next_mean, next_std)
             next_action_sample = next_dist.sample()
@@ -128,14 +128,14 @@ class SAC_Agent():
             log_prob = log_prob.sum(dim=1, keepdim=True)
 
             # target q value calculation
-            target_Q1, target_Q2 = self.target_critic.forward(norm_next_state, goal, next_action)
+            target_Q1, target_Q2 = self.target_critic.forward(next_state, goal, next_action)
             target_Q = torch.min(target_Q1, target_Q2) - alpha_val * log_prob
             target_Q = reward + (1 - done) * self.gamma * target_Q
 
         
 
         # critic update
-        current_Q1, current_Q2 = self.critic.forward(norm_state, goal, action)
+        current_Q1, current_Q2 = self.critic.forward(state, goal, action)
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
 
         self.critic_optimiser.zero_grad()
@@ -145,7 +145,7 @@ class SAC_Agent():
 
         # actor update
         # re-evaluate current state
-        mean, log_std, _ = self.actor.forward(norm_state, goal)
+        mean, log_std, _ = self.actor.forward(state, goal)
         std = log_std.exp()
         dist = torch.distributions.Normal(mean, std)
         z = dist.rsample()
@@ -154,7 +154,7 @@ class SAC_Agent():
         log_prob = dist.log_prob(z) - torch.log(1 - torch.tanh(z).pow(2) + 1e-6)
         log_prob = log_prob.sum(dim=1, keepdim=True)
 
-        Q1, Q2 = self.critic(norm_state, goal, new_action)
+        Q1, Q2 = self.critic(state, goal, new_action)
         Q = torch.min(Q1, Q2)
 
         actor_loss = (alpha_val * log_prob - Q).mean()
