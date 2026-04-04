@@ -85,9 +85,9 @@ class SAC_Agent():
 
         state, goal, action, reward, next_state, done = replay_buffer.sample(batch_size)
 
-        # with torch.no_grad():
-        #     norm_state = obs_normaliser.normalise(state)
-        #     norm_next_state = obs_normaliser.normalise(next_state)
+        with torch.no_grad():
+            norm_state = obs_normaliser.normalise(state)
+            norm_next_state = obs_normaliser.normalise(next_state)
             
         if self.alpha_fixed:
             alpha_val = self.alpha
@@ -96,11 +96,12 @@ class SAC_Agent():
             alpha_val = self.log_alpha.exp().detach()
 
         if self.useRND:
-            predictor_feature, target_feature = self.rnd_model.forward(next_state)
+            predictor_feature, target_feature = self.rnd_model.forward(norm_next_state)
             intrinsic_reward = F.mse_loss(predictor_feature, target_feature.detach(), reduction='none').mean(dim=-1, keepdim=True)
             reward_normaliser.update(intrinsic_reward.detach())
             normalised_intrinsic_reward = intrinsic_reward / torch.sqrt(reward_normaliser.var + reward_normaliser.epsilon)
-            reward = reward + (self.intrinsic_scale * normalised_intrinsic_reward.detach())
+            if self.intrinsic_scale > 0:
+                reward = reward + (self.intrinsic_scale * normalised_intrinsic_reward.detach())
             rnd_loss = intrinsic_reward.mean()
 
             self.rnd_optimiser.zero_grad()
@@ -116,7 +117,7 @@ class SAC_Agent():
         
         with torch.no_grad():
             # target action
-            next_mean, next_log_std, _ = self.target_actor.forward(next_state, goal)
+            next_mean, next_log_std, _ = self.actor.forward(next_state, goal)
             next_std = next_log_std.exp()
             next_dist = torch.distributions.Normal(next_mean, next_std)
             next_action_sample = next_dist.sample()
@@ -139,6 +140,7 @@ class SAC_Agent():
 
         self.critic_optimiser.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1.0)
         self.critic_optimiser.step()
 
         # actor update
@@ -176,8 +178,8 @@ class SAC_Agent():
         for param, target_param in zip(self.critic.parameters(), self.target_critic.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
-        for param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+        # for param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
+        #     target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 
         return actor_loss.item(), critic_loss.item(), alpha_val.item(), alpha_loss_value, mean_intrinsic_reward, mean_norm_intrinsic_reward
@@ -260,34 +262,34 @@ if __name__ == "__main__":
                       useRND=useRND, useICM=useICM, im_reward_scale=im_reward_scale)
     replay_buffer = HERBuffer(buffer_size=buffer_size, k_future=k_future)
 
-    # obs_normaliser = RunningMeanStd(state_dim)
-    # obs_normaliser.to(device)
+    obs_normaliser = RunningMeanStd(state_dim)
+    obs_normaliser.to(device)
 
     reward_normaliser = RunningMeanStd(1)
     reward_normaliser.to(device)
 
     # normalisation warmup
-    # warmup_steps = 50
-    # total_warmup_steps = warmup_steps * 50
-    # obs, _ = env.reset()
-    # print(f"Warming Up Normaliser: {warmup_steps} episodes")
-    # for i in range(total_warmup_steps):
-    #     # 1. Take a completely random action
-    #     action = env.action_space.sample()
+    warmup_steps = 50
+    total_warmup_steps = warmup_steps * 50
+    obs, _ = env.reset()
+    print(f"Warming Up Normaliser: {warmup_steps} episodes")
+    for i in range(total_warmup_steps):
+        # 1. Take a completely random action
+        action = env.action_space.sample()
         
-    #     # 2. Step the environment
-    #     next_obs, reward, terminated, truncated, info = env.step(action)
+        # 2. Step the environment
+        next_obs, reward, terminated, truncated, info = env.step(action)
         
-    #     # 3. Extract the actual observation array (Fetch envs return dictionaries)
-    #     # We only want the 'observation' key, not 'achieved_goal' or 'desired_goal'
-    #     state_array = next_obs['observation']
+        # 3. Extract the actual observation array (Fetch envs return dictionaries)
+        # We only want the 'observation' key, not 'achieved_goal' or 'desired_goal'
+        state_array = next_obs['observation']
 
-    #     obs_normaliser.update(torch.tensor(state_array))
+        obs_normaliser.update(torch.tensor(state_array))
 
-    #     if terminated or truncated:
-    #         obs, info = env.reset()
-    #     else:
-    #         obs = next_obs
+        if terminated or truncated:
+            obs, info = env.reset()
+        else:
+            obs = next_obs
 
     # --- Logging Setup ---
     training_logs = {
@@ -328,7 +330,7 @@ if __name__ == "__main__":
             if info.get('is_success', 0.0) > 0:
                 success = 1
 
-            #obs_normaliser.update(torch.tensor(next_state))
+            obs_normaliser.update(torch.tensor(next_state))
             
             done = terminated or truncated
             episode_reward += reward
