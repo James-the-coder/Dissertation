@@ -146,18 +146,17 @@ class SAC_Agent():
             # update losses
             icm_fdm_loss = intrinsic_reward.mean()
             icm_idm_loss = idm_loss.mean()
-            icm_encoder_loss = (1-self.loss_balance) * icm_idm_loss + self.loss_balance * icm_fdm_loss
+            icm_total_loss = (1-self.loss_balance) * icm_idm_loss + self.loss_balance * icm_fdm_loss
+
 
             self.icm_fdm_optimiser.zero_grad()
-            icm_fdm_loss.backward()
-            self.icm_fdm_optimiser.step()
-
             self.icm_idm_optimiser.zero_grad()
-            icm_idm_loss.backward()
-            self.icm_idm_optimiser.step()
-
             self.icm_enc_optimiser.zero_grad()
-            icm_encoder_loss.backward()
+
+            icm_total_loss.backward()
+
+            self.icm_fdm_optimiser.step()
+            self.icm_idm_optimiser.step()
             self.icm_enc_optimiser.step()
 
             mean_intrinsic_reward = icm_fdm_loss.item()
@@ -477,7 +476,7 @@ if __name__ == "__main__":
             df = pd.DataFrame(training_logs)
             df.to_csv("./saves/training_log.csv", index=False)
         
-        # Save Model Checkpoint every 500 episodes
+        # Save Model Checkpoint every 5000 episodes
         if (ep + 1) % 5000 == 0:
             agent.save_checkpoint(f"./saves/sac_her_fetch_{ep+1}.pth")
             print(f"Model Saved: sac_her_fetch_{ep+1}.pth")
