@@ -21,7 +21,11 @@ script_dir = Path(__file__).parent.absolute()
 rnd_folder = os.path.join(script_dir, 'RND')
 sys.path.append(rnd_folder)
 
+icm_folder = os.path.join(script_dir, 'ICM')
+sys.path.append(icm_folder)
+
 from rnd import RNDModel
+from icm import ICMmodel
 
 ENV_NAME = "FetchPickAndPlace-v4"
 #ENV_NAME = "FetchReach-v4"
@@ -59,6 +63,14 @@ class SAC_Agent():
         if self.useRND:
             self.rnd_model = RNDModel(state_dim).to(device)
             self.rnd_optimiser = optim.Adam(self.rnd_model.predictor_net.parameters(), lr=learn_rate)
+
+        self.useICM = useICM
+        if self.useICM:
+            self.icm_model = ICMmodel(state_dim, action_dim).to(device)
+            self.loss_balance = 0.5
+            self.icm_fdm_optimiser = optim.Adam(self.icm_model.forward_net.parameters(), lr=learn_rate)
+            self.icm_idm_optimiser = optim.Adam(self.icm_model.inverse_net.parameters(), lr=learn_rate)
+            self.icm_enc_optimiser = optim.Adam(self.icm_model.encoder_net.parameters(), lr=learn_rate)
 
 
     def select_action(self, state, goal, deterministic=False):
@@ -109,6 +121,46 @@ class SAC_Agent():
             self.rnd_optimiser.step()
 
             mean_intrinsic_reward = rnd_loss.item()
+            mean_norm_intrinsic_reward = normalised_intrinsic_reward.mean().item()
+        
+        elif self.useICM:
+            # get state and next state encodings
+            norm_next_state_enc = self.icm_model.encoder(norm_next_state)
+            norm_state_enc = self.icm_model.encoder(norm_state)
+
+            # forward dynamics model
+            pred_next_state = self.icm_model.forward(norm_state, action)
+            intrinsic_reward = F.mse_loss(pred_next_state, norm_next_state_enc, reduction='none').mean(dim=-1, keepdim=True)
+ 
+            # inverse dynamics model
+            pred_action = self.icm_model.inverse(norm_state, norm_next_state)
+            idm_loss = F.mse_loss(action, pred_action, reduction='none').mean(dim=-1, keepdim=True)
+
+            # normalise intrinsic reward
+            reward_normaliser.update(intrinsic_reward.detach())
+            normalised_intrinsic_reward = intrinsic_reward / torch.sqrt(reward_normaliser.var + reward_normaliser.epsilon)
+
+            if self.intrinsic_scale > 0:
+                reward = reward + (self.intrinsic_scale * normalised_intrinsic_reward.detach())
+
+            # update losses
+            icm_fdm_loss = intrinsic_reward.mean()
+            icm_idm_loss = idm_loss.mean()
+            icm_encoder_loss = (1-self.loss_balance) * icm_idm_loss + self.loss_balance * icm_fdm_loss
+
+            self.icm_fdm_optimiser.zero_grad()
+            icm_fdm_loss.backward()
+            self.icm_fdm_optimiser.step()
+
+            self.icm_idm_optimiser.zero_grad()
+            icm_idm_loss.backward()
+            self.icm_idm_optimiser.step()
+
+            self.icm_enc_optimiser.zero_grad()
+            icm_encoder_loss.backward()
+            self.icm_enc_optimiser.step()
+
+            mean_intrinsic_reward = icm_fdm_loss.item()
             mean_norm_intrinsic_reward = normalised_intrinsic_reward.mean().item()
 
         else:
@@ -202,6 +254,13 @@ class SAC_Agent():
             checkpoint['rnd_target_state_dict'] = self.rnd_model.target_net.state_dict(),
             checkpoint['rnd_optimiser_state_dict'] = self.rnd_optimiser.state_dict()
 
+        if self.useICM:
+            checkpoint['icm_fdm_state_dict'] = self.icm_model.forward_net.state_dict(),
+            checkpoint['icm_idm_state_dict'] = self.icm_model.inverse_net.state_dict(),
+            checkpoint['icm_encoder_state_dict'] = self.icm_model.encoder_net.state_dict(),
+            checkpoint['fdm_optimiser_state_dict'] = self.icm_fdm_optimiser.state_dict(),
+            checkpoint['idm_optimiser_state_dict'] = self.icm_idm_optimiser.state_dict(),
+            checkpoint['encoder_optimiser_state_dict'] = self.icm_enc_optimiser.state_dict()
             
         torch.save(checkpoint, filename)
 
@@ -222,6 +281,14 @@ class SAC_Agent():
             self.rnd_model.predictor_net.load_state_dict(checkpoint['rnd_predictor_state_dict'])
             self.rnd_model.target_net.load_state_dict(checkpoint['rnd_target_state_dict'])
             self.rnd_optimiser.load_state_dict(checkpoint['rnd_optimiser_state_dict'])
+
+        if self.useICM:
+            self.icm_model.forward_net.load_state_dict(checkpoint['icm_fdm_state_dict'])
+            self.icm_model.inverse_net.load_state_dict(checkpoint['icm_idm_state_dict'])
+            self.icm_model.encoder_net.load_state_dict(checkpoint['icm_encoder_state_dict'])
+            self.icm_fdm_optimiser.load_state_dict(checkpoint['fdm_optimiser_state_dict'])
+            self.icm_fdm_optimiser.load_state_dict(checkpoint['idm_optimiser_state_dict'])
+            self.icm_enc_optimiser.load_state_dict(checkpoint['encoder_optimiser_state_dict'])
 
         # Also sync target networks
         self.target_actor = copy.deepcopy(self.actor)
