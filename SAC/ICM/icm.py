@@ -20,7 +20,7 @@ class ICMmodel(nn.Module):
         self.encoder_net = nn.Sequential(
             layer_init(nn.Linear(self.state_dim, 64)),
             nn.ReLU(),
-            layer_init(nn.Linear(64, self.feature_dim))
+            layer_init(nn.Linear(64, self.feature_dim)),
         )
 
         # forward dynamics network
@@ -42,7 +42,8 @@ class ICMmodel(nn.Module):
 
     def encoder(self, state):
         encoded_state = self.encoder_net(state)
-        return encoded_state
+        norm_encoded_state = nn.functional.normalize(encoded_state, p=2, dim=1)
+        return norm_encoded_state
 
     
     def forward(self, state, action):
