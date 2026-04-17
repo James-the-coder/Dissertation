@@ -3,6 +3,7 @@ from critic_net import Critic
 from replay_buffer import HERBuffer
 import torch
 import torch.optim as optim
+import torch.nn as nn
 import copy
 import torch.nn.functional as F
 import gymnasium as gym
@@ -67,7 +68,7 @@ class SAC_Agent():
         self.useICM = useICM
         if self.useICM:
             self.icm_model = ICMmodel(state_dim, action_dim).to(device)
-            self.loss_balance = 0.5
+            self.loss_balance = 0.2
             self.icm_fdm_optimiser = optim.Adam(self.icm_model.forward_net.parameters(), lr=learn_rate)
             self.icm_idm_optimiser = optim.Adam(self.icm_model.inverse_net.parameters(), lr=learn_rate)
             self.icm_enc_optimiser = optim.Adam(self.icm_model.encoder_net.parameters(), lr=learn_rate)
@@ -127,13 +128,23 @@ class SAC_Agent():
             # get state and next state encodings
             norm_next_state_enc = self.icm_model.encoder(norm_next_state)
             norm_state_enc = self.icm_model.encoder(norm_state)
+            
+            # norm_state_l2 = nn.functional.normalize(norm_state, p=2, dim=1)
+            # norm_next_state_l2 = nn.functional.normalize(norm_next_state, p=2, dim=1)
+            
 
             # forward dynamics model
-            pred_next_state = self.icm_model.forward(norm_state, action)
-            intrinsic_reward = F.mse_loss(pred_next_state, norm_next_state_enc, reduction='none').mean(dim=-1, keepdim=True)
+            fdm_input = torch.cat([norm_state_enc, action], dim=1)
+            pred_next_state = self.icm_model.forward_net(fdm_input)
+            intrinsic_reward = F.mse_loss(pred_next_state, norm_next_state_enc.detach(), reduction='none').mean(dim=-1, keepdim=True)
+            # print(torch.linalg.norm(pred_next_state, dim=1).mean().item())
+            # print(torch.var(pred_next_state, dim=0).mean().item())
+            # print(intrinsic_reward.mean().item())
+            # input()
  
             # inverse dynamics model
-            pred_action = self.icm_model.inverse(norm_state, norm_next_state)
+            idm_input = torch.cat([norm_state_enc, norm_next_state_enc], dim=1)
+            pred_action = self.icm_model.inverse_net(idm_input)
             idm_loss = F.mse_loss(action, pred_action, reduction='none').mean(dim=-1, keepdim=True)
 
             # normalise intrinsic reward
@@ -154,6 +165,7 @@ class SAC_Agent():
             self.icm_enc_optimiser.zero_grad()
 
             icm_total_loss.backward()
+            #icm_fdm_loss.backward()
 
             self.icm_fdm_optimiser.step()
             self.icm_idm_optimiser.step()
