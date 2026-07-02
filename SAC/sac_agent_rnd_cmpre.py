@@ -3,7 +3,6 @@ from critic_net import Critic
 from replay_buffer import HERBuffer
 import torch
 import torch.optim as optim
-import torch.nn as nn
 import copy
 import torch.nn.functional as F
 import gymnasium as gym
@@ -22,11 +21,7 @@ script_dir = Path(__file__).parent.absolute()
 rnd_folder = os.path.join(script_dir, 'RND')
 sys.path.append(rnd_folder)
 
-icm_folder = os.path.join(script_dir, 'ICM')
-sys.path.append(icm_folder)
-
 from rnd import RNDModel
-from icm import ICMmodel
 
 ENV_NAME = "FetchPickAndPlace-v4"
 #ENV_NAME = "FetchReach-v4"
@@ -64,14 +59,6 @@ class SAC_Agent():
         if self.useRND:
             self.rnd_model = RNDModel(state_dim).to(device)
             self.rnd_optimiser = optim.Adam(self.rnd_model.predictor_net.parameters(), lr=learn_rate)
-
-        self.useICM = useICM
-        if self.useICM:
-            self.icm_model = ICMmodel(state_dim, action_dim).to(device)
-            self.loss_balance = 0.2
-            self.icm_fdm_optimiser = optim.Adam(self.icm_model.forward_net.parameters(), lr=learn_rate)
-            self.icm_idm_optimiser = optim.Adam(self.icm_model.inverse_net.parameters(), lr=learn_rate)
-            self.icm_enc_optimiser = optim.Adam(self.icm_model.encoder_net.parameters(), lr=learn_rate)
 
 
     def select_action(self, state, goal, deterministic=False):
@@ -122,56 +109,6 @@ class SAC_Agent():
             self.rnd_optimiser.step()
 
             mean_intrinsic_reward = rnd_loss.item()
-            mean_norm_intrinsic_reward = normalised_intrinsic_reward.mean().item()
-        
-        elif self.useICM:
-            # get state and next state encodings
-            norm_next_state_enc = self.icm_model.encoder(norm_next_state)
-            norm_state_enc = self.icm_model.encoder(norm_state)
-            
-            # norm_state_l2 = nn.functional.normalize(norm_state, p=2, dim=1)
-            # norm_next_state_l2 = nn.functional.normalize(norm_next_state, p=2, dim=1)
-            
-
-            # forward dynamics model
-            fdm_input = torch.cat([norm_state_enc, action], dim=1)
-            pred_next_state = self.icm_model.forward_net(fdm_input)
-            intrinsic_reward = F.mse_loss(pred_next_state, norm_next_state_enc.detach(), reduction='none').mean(dim=-1, keepdim=True)
-            # print(torch.linalg.norm(pred_next_state, dim=1).mean().item())
-            # print(torch.var(pred_next_state, dim=0).mean().item())
-            # print(intrinsic_reward.mean().item())
-            # input()
- 
-            # inverse dynamics model
-            idm_input = torch.cat([norm_state_enc, norm_next_state_enc], dim=1)
-            pred_action = self.icm_model.inverse_net(idm_input)
-            idm_loss = F.mse_loss(action, pred_action, reduction='none').mean(dim=-1, keepdim=True)
-
-            # normalise intrinsic reward
-            reward_normaliser.update(intrinsic_reward.detach())
-            normalised_intrinsic_reward = intrinsic_reward / torch.sqrt(reward_normaliser.var + reward_normaliser.epsilon)
-
-            if self.intrinsic_scale > 0:
-                reward = reward + (self.intrinsic_scale * normalised_intrinsic_reward.detach())
-
-            # update losses
-            icm_fdm_loss = intrinsic_reward.mean()
-            icm_idm_loss = idm_loss.mean()
-            icm_total_loss = (1-self.loss_balance) * icm_idm_loss + self.loss_balance * icm_fdm_loss
-
-
-            self.icm_fdm_optimiser.zero_grad()
-            self.icm_idm_optimiser.zero_grad()
-            self.icm_enc_optimiser.zero_grad()
-
-            icm_total_loss.backward()
-            #icm_fdm_loss.backward()
-
-            self.icm_fdm_optimiser.step()
-            self.icm_idm_optimiser.step()
-            self.icm_enc_optimiser.step()
-
-            mean_intrinsic_reward = icm_fdm_loss.item()
             mean_norm_intrinsic_reward = normalised_intrinsic_reward.mean().item()
 
         else:
@@ -265,13 +202,6 @@ class SAC_Agent():
             checkpoint['rnd_target_state_dict'] = self.rnd_model.target_net.state_dict(),
             checkpoint['rnd_optimiser_state_dict'] = self.rnd_optimiser.state_dict()
 
-        if self.useICM:
-            checkpoint['icm_fdm_state_dict'] = self.icm_model.forward_net.state_dict(),
-            checkpoint['icm_idm_state_dict'] = self.icm_model.inverse_net.state_dict(),
-            checkpoint['icm_encoder_state_dict'] = self.icm_model.encoder_net.state_dict(),
-            checkpoint['fdm_optimiser_state_dict'] = self.icm_fdm_optimiser.state_dict(),
-            checkpoint['idm_optimiser_state_dict'] = self.icm_idm_optimiser.state_dict(),
-            checkpoint['encoder_optimiser_state_dict'] = self.icm_enc_optimiser.state_dict()
             
         torch.save(checkpoint, filename)
 
@@ -292,14 +222,6 @@ class SAC_Agent():
             self.rnd_model.predictor_net.load_state_dict(checkpoint['rnd_predictor_state_dict'])
             self.rnd_model.target_net.load_state_dict(checkpoint['rnd_target_state_dict'])
             self.rnd_optimiser.load_state_dict(checkpoint['rnd_optimiser_state_dict'])
-
-        if self.useICM:
-            self.icm_model.forward_net.load_state_dict(checkpoint['icm_fdm_state_dict'])
-            self.icm_model.inverse_net.load_state_dict(checkpoint['icm_idm_state_dict'])
-            self.icm_model.encoder_net.load_state_dict(checkpoint['icm_encoder_state_dict'])
-            self.icm_fdm_optimiser.load_state_dict(checkpoint['fdm_optimiser_state_dict'])
-            self.icm_fdm_optimiser.load_state_dict(checkpoint['idm_optimiser_state_dict'])
-            self.icm_enc_optimiser.load_state_dict(checkpoint['encoder_optimiser_state_dict'])
 
         # Also sync target networks
         self.target_actor = copy.deepcopy(self.actor)
@@ -488,7 +410,7 @@ if __name__ == "__main__":
             df = pd.DataFrame(training_logs)
             df.to_csv("./saves/training_log.csv", index=False)
         
-        # Save Model Checkpoint every 5000 episodes
+        # Save Model Checkpoint every 500 episodes
         if (ep + 1) % 5000 == 0:
             agent.save_checkpoint(f"./saves/sac_her_fetch_{ep+1}.pth")
             print(f"Model Saved: sac_her_fetch_{ep+1}.pth")

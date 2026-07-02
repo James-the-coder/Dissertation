@@ -7,9 +7,9 @@ from actor_net import Actor
 import time
 
 # --- CONFIGURATION ---
-#ENV_NAME = "FetchPickAndPlace-v4"
-ENV_NAME = "FetchReach-v4"
-MODEL_PATH = "./fetch_reach_saves/sac_her_fetch_final.pth" # Change to a specific checkpoint if needed
+ENV_NAME = "FetchPickAndPlace-v4"
+#ENV_NAME = "FetchReach-v4"
+MODEL_PATH = "./fixed_pick_place_v3_saves/sac_her_fetch_80000.pth" # Change to a specific checkpoint if needed
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def evaluate_agent():
@@ -51,7 +51,7 @@ def evaluate_agent():
         success = False
         
         for t in range(50):
-            #time.sleep(0.05)
+            time.sleep(0.05)
             # Format inputs for PyTorch
             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
             goal_tensor = torch.FloatTensor(desired_goal).unsqueeze(0).to(device)
