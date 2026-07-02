@@ -66,3 +66,5 @@ Adjust the config.json file to reflect the desired hyperparameters
 pip install -r requirements.txt
 python SAC/sac_agent.py
 ```
+training data is saved to 'saves' folder in a csv
+models have checkpoints saved to the above saves folder
