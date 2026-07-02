@@ -3,7 +3,7 @@
 Comparing exploration strategies for robotic pick-and-place tasks under sparse rewards, 
 by combining SAC+HER with two intrinsic motivation methods (ICM and RND).
 
-📄 [Full dissertation (PDF)](dissertation.pdf) — University of Bath, final year, 2026
+📄 [Full dissertation (PDF)](Dissertation.pdf) — University of Bath, final year, 2026
 
 ## Overview
 
