@@ -27,33 +27,42 @@ Four SAC+HER variants were evaluated on Fetch-Pick-And-Place-v4 (sparse reward),
 averaged across 4 seeds over 4.75M timesteps each: a fixed-entropy baseline, a 
 learnt-entropy baseline, and the learnt-entropy baseline augmented with either RND 
 or ICM.
-[One or two key plots here — e.g. success rate / sample efficiency vs training steps, 
-comparing baseline vs ICM vs RND]
+![plots](images/success%20rate%20final.png)
+![plots](images/mean%20reward%20final.png)
+![plots](images/intrinsic%20reward%20plot.png)
+![plots](images/MAJ%20plot%20final.png)
 
-[1-2 sentences on the headline finding — e.g. "RND improved sample efficiency by X% 
-over the SAC+HER baseline in the hardest task variant, while ICM underperformed due to..."]
+RND performed best overall — 0.93 success rate, converging in 1.3M timesteps, ~200k faster than the strongest baseline — while ICM actually underperformed the learnt-entropy baseline (0.90 success rate, 2.1M timesteps), because MuJoCo's deterministic physics let its forward-dynamics model predict transitions too easily, collapsing its exploration signal early. The more interesting finding came from tracking Mean Absolute Jerk as a proxy for real-world hardware safety: both RND and ICM converged to trajectories with ~250 m/s³ of jerk (peaking over 800 m/s³) — equivalent to 25g/s at the end-effector, well beyond what a physical manipulator could handle without rapid actuator wear — because with fixed-length episodes, both agents solve the task early then "farm" their own exploration bonus through erratic post-task movement. The fixed-entropy baseline, despite the worst success rate, was the only policy safe for zero-shot hardware deployment. The takeaway: the algorithms that win on standard RL benchmarks are the same ones that produce policies unsafe for real robots — success rate alone is a poor proxy for deployment readiness.
 
-## What I'd do differently
-
-[2-3 honest sentences — e.g. more seeds for statistical significance, a harder task 
-suite, comparing against a learned dense reward baseline]
 
 ## Repo structure
-
-├── src/           # SAC, HER, ICM, RND implementations
-├── configs/       # experiment configs
-├── scripts/       # training / eval entry points
-├── docs/
-│   └── dissertation.pdf
-└── results/       # plots, logs
-
+```text
+SAC:
+  |   actor_net.py
+  |   agent_eval.py
+  |   config.json
+  |   critic_net.py
+  |   jitter.py
+  |   normaliser.py
+  |   parse_config.py
+  |   replay_buffer.py
+  |   sac_agent.py
+  |   sac_agent_hc.py
+  |   sac_agent_rnd_cmpre.py
+  |   sac_agent_tune_temp.py
+  |   
+  +---ICM
+  |   |   icm.py
+  |   |   
+  |           
+  +---RND
+  |   |   rnd.py
+  |   |   
+  |     
+```
 ## Running it
 
-\`\`\`bash
+```bash
 pip install -r requirements.txt
-python scripts/train.py --config configs/rnd_pickplace.yaml
-\`\`\`
-
-## Skills demonstrated
-Python · PyTorch · Reinforcement Learning · MuJoCo · Experiment design · 
-Multi-node GPU training
+python SAC/sac_agent.py
+```
