@@ -16,7 +16,7 @@ safe for real hardware.
 
 ## Method
 
-- **Environment:** MuJoCo robotic pick-and-place tasks (sparse reward)
+- **Environment:** MuJoCo robotic pick-and-place tasks (sparse reward) from [here](https://robotics.farama.org/envs/fetch/)
 - **Base algorithm:** SAC + HER, implemented from scratch in Python
 - **Exploration bonuses tested:** ICM, RND, and a no-bonus baseline
 - **Compute:** Models trained on university compute cluster
