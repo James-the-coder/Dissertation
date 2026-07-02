@@ -61,7 +61,7 @@ SAC:
   |     
 ```
 ## Running it
-
+Adjust the config.json file to reflect the desired hyperparameters
 ```bash
 pip install -r requirements.txt
 python SAC/sac_agent.py
